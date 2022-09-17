@@ -21,7 +21,7 @@ import rasterio.mask
 import affine
 from pyproj import CRS
 import numpy as np
-from typing import Union
+from typing import Union, Any
 
 
 def load_raster(in_path: str) -> dict:
@@ -36,7 +36,8 @@ def load_raster(in_path: str) -> dict:
 
         # - compute x- and y-axis coordinates
         x_coords = np.arange(ul_corner[0], lr_corner[0], grid_res[0])
-        y_coords = np.arange(lr_corner[1], ul_corner[1], grid_res[1])
+        y_coords = np.arange(lr_corner[1] + grid_res[1],
+                             ul_corner[1] + grid_res[1], grid_res[1])
         # - compute raster extent - (left, right, bottom, top)
         extent = [ul_corner[0], lr_corner[0], lr_corner[1], ul_corner[1]]
         # - compute cell centroids
@@ -60,7 +61,7 @@ def load_raster(in_path: str) -> dict:
                'nodata': src.nodata, 'dtype': src.dtypes[0]}
 
 
-def save_raster(raster: np.ndarray, res: int, x: np.ndarray,
+def save_raster(raster: np.ndarray, res: Any, x: np.ndarray,
                 y: np.ndarray, out_path: str, crs: int,
                 nbands: int = 1, nodata: int = -9999) -> None:
     """
@@ -183,7 +184,7 @@ def virtual_warp_rio(src_file: str, out_file: str, res: int = 250,
     """
     # - Define output grid - with regular step equal to the
     # - selected resolution
-    dem_src = load_dem_tiff(src_file)
+    dem_src = load_raster(src_file)
     # - raster upper - left and lower - right corners
     ul_corner_1 = dem_src['ul_corner']
     lr_corner_1 = dem_src['lr_corner']

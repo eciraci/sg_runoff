@@ -67,53 +67,46 @@ import matplotlib.pyplot as plt
 from matplotlib import colors
 import richdem as rd
 # - Library Dependencies
-from utility_functions_rasterio import load_raster, save_raster
-
-
-def create_dir(abs_path: str, dir_name: str) -> str:
-    """
-    Create directory
-    :param abs_path: absolute path to the output directory
-    :param dir_name: new directory name
-    :return: absolute path to the new directory
-    """
-    dir_to_create = os.path.join(abs_path, dir_name)
-    if not os.path.exists(dir_to_create):
-        os.mkdir(dir_to_create)
-    return dir_to_create
+from utils.make_dir import make_dir
+from utility_functions_rasterio import load_raster, save_raster, clip_raster
 
 
 def main() -> None:
-    # - Project Data Directory
-    project_dir = os.path.join('/', 'Volumes', 'Extreme Pro', 'BedMachine',
-                               'output.dir')
-    output_dir = create_dir(project_dir, 'subglacial_flow_rich')
-
     # - Processing Parameters
-    # - Accumulation value used as threshold for River Network determination.
-    rn_thresh = 100
+    routing = 'Dinf'     # - Selected Routing Algorithm
+    # - For other accumulation routing schemes:
+    # - https://richdem.readthedocs.io/en/latest/python_api.html
 
     # - Figure Parameters
     fig_format = 'jpeg'
     dpi = 200
 
+    # - Project Data Directory
+    project_dir = os.path.join('/', 'Volumes', 'Extreme Pro', 'BedMachine',
+                               'output.dir')
+    output_dir = make_dir(project_dir, 'subglacial_flow_rich')
+    output_dir = make_dir(output_dir, routing)
+
     # - Absolute Path to BedMachine Data
     # - Bedrock
-    bed_path = os.path.join('/', 'Volumes', 'Extreme Pro', 'BedMachine',
-                            'output.dir', 'BedMachineGreenland_bed',
-                            'Petermann_Domain_Velocity_Stereo_bed'
-                            '_EPSG-3413_res150.tiff')
+    bed_path \
+        = os.path.join('/', 'Volumes', 'Extreme Pro', 'BedMachine',
+                       'output.dir', 'BedMachineGreenland-version_05_bed',
+                       'Petermann_Domain_Velocity_Stereo_bed'
+                       '_EPSG-3413_res150.tiff')
     # - Ice Elevation
-    elev_path = os.path.join('/', 'Volumes', 'Extreme Pro', 'BedMachine',
-                             'output.dir', 'BedMachineGreenland_surface',
-                             'Petermann_Domain_Velocity_Stereo_surface'
-                             '_EPSG-3413_res150.tiff')
+    elev_path \
+        = os.path.join('/', 'Volumes', 'Extreme Pro', 'BedMachine',
+                       'output.dir', 'BedMachineGreenland-version_05_surface',
+                       'Petermann_Domain_Velocity_Stereo_surface'
+                       '_EPSG-3413_res150.tiff')
 
     # - Ice Thickness
-    thick_path = os.path.join('/', 'Volumes', 'Extreme Pro', 'BedMachine',
-                              'output.dir', 'BedMachineGreenland_thickness',
-                              'Petermann_Domain_Velocity_Stereo_thickness'
-                              '_EPSG-3413_res150.tiff')
+    thick_path \
+        = os.path.join('/', 'Volumes', 'Extreme Pro', 'BedMachine',
+                       'output.dir', 'BedMachineGreenland-version_05_thickness',
+                       'Petermann_Domain_Velocity_Stereo_thickness'
+                       '_EPSG-3413_res150.tiff')
 
     # - Compute Hydraulic Potential
     print('# - Compute Hydraulic Potential.')
@@ -125,9 +118,9 @@ def main() -> None:
     ice_mask[thick_input['data'] > 0] = 1
 
     # - Conversion Parameters
-    rho_water = 1000  # Water Density [kg / m3]
-    rho_ice = 917  # Ice Density [kg / m3]
-    gravity = 9.81  # Gravity Acceleration [m / s2]
+    rho_water = 1000        # Water Density [kg / m3]
+    rho_ice = 917           # Ice Density [kg / m3]
+    gravity = 9.81          # Gravity Acceleration [m / s2]
 
     # For more Info see:
     # Cuffey & Peterson, 2006 - "The Physics of Glaciers" - Chapter #6.
@@ -143,7 +136,6 @@ def main() -> None:
     # -
     # - Z is Ice Bed Elevation
     # - S is Ice Surface Elevation
-
     surf_elev = elev_input['data']
     bed_elev = bed_input['data']
     x_vect = elev_input['x_coords']
@@ -155,21 +147,38 @@ def main() -> None:
     # - Hydraulic Potential
     hydro_pot = ((rho_ice * gravity * surf_elev)
                  + ((rho_water - rho_ice) * gravity * bed_elev))
-    hydro_pot[ice_mask == 0] = np.nan
 
+    # - Consider only ice-covered regions
+    hydro_pot[ice_mask == 0] = np.nan
     # -
     out_path = os.path.join(output_dir, 'Petermann_Domain_Velocity'
                                         '_Stereo_hydro_pot_EPSG-3413'
                                         '_res150.tiff')
     save_raster(hydro_pot, res, x_vect, y_vect, out_path, crs)
 
-    print('# - Compute Accumulated Sub-Glacial Flow using RichDEM.')
-    dem = rd.LoadGDAL(out_path)
+    # - Need to clip the Ice Shelf surface before computing the
+    # - accumulated flow.
+    ice_shelf_mask = os.path.join('/', 'Volumes', 'Extreme Pro', 'GIS_Data',
+                                  'Petermann_Ice_Shelf',
+                                  'Petermann_Domain-Ice_Shelf_Mask_GL-'
+                                  'ERS2011.shp')
+    out_path_clip = out_path.replace('_Stereo_hydro_pot',
+                                     '_Stereo_hydro_pot_clipped')
+    clip_raster(out_path, ice_shelf_mask, out_path_clip, nodata=np.nan)
 
+    # - Load Clipped Mask
+    hydro_pot_in = load_raster(out_path_clip)
+    hydro_pot_clp = np.flipud(hydro_pot_in['data'])
+    ice_mask_clp = np.where(np.isnan(hydro_pot_clp))
+
+    print('# - Compute Accumulated Sub-Glacial Flow using RichDEM.')
+    dem = rd.LoadGDAL(out_path_clip, no_data=-9999)
+    dem[ice_mask_clp] = np.nan
     # - Show Hydraulic Potential
     fig, ax = plt.subplots(figsize=(8, 6))
     fig.patch.set_alpha(0)
-    plt.imshow(dem, extent=extent, cmap='Greys', zorder=1)
+    plt.imshow(dem, extent=extent, cmap='plasma', zorder=1,
+               interpolation='bilinear')
     plt.colorbar(label='[kg / m / s2]')
     plt.grid(zorder=0)
     plt.title('Hydraulic Potential Map', size=14)
@@ -179,41 +188,47 @@ def main() -> None:
     plt.savefig(os.path.join(output_dir,
                              f'hydraulic_potential.{fig_format}'),
                 dpi=dpi, format=fig_format)
+    plt.show()
     plt.close()
 
-    # Fill depressions with epsilon gradient to ensure drainage
+    # - Fill depressions with epsilon gradient to ensure drainage
     rd.FillDepressions(dem, epsilon=True, in_place=True)
-    # Get flow accumulation with no explicit weighting. The default will be 1.
-    accum_d8 = rd.FlowAccumulation(dem, method='D8')
-    d8_fig = rd.rdShow(accum_d8, zxmin=450, zxmax=550, zymin=550, zymax=450,
-                       figsize=(8, 5.5), axes=False, cmap='jet')
+    # - Get flow accumulation with no explicit weighting. The default will be 1.
+    accum_d = rd.FlowAccumulation(dem, method=routing)
+    d_fig = rd.rdShow(accum_d, zxmin=450, zxmax=550, zymin=550, zymax=450,
+                      figsize=(8, 5.5), axes=False, cmap='jet')
     plt.close()
+
+    # - Compute terrain attributed
+    slope = rd.TerrainAttribute(dem, attrib='aspect')
+    rd.rdShow(slope, axes=False, cmap='jet', figsize=(8, 5.5))
 
     # ---------------------------
     # Calculate flow accumulation
     # ---------------------------
-    accum_d8[np.flipud(ice_mask) == 0] = np.nan
-    # - Save the obtained raster
-    out_path = os.path.join(output_dir, 'flow_accumulation_D8.tiff')
-    save_raster(np.flipud(accum_d8), res, x_vect, y_vect, out_path, crs)
+    accum_d[ice_mask_clp] = np.nan
+    # - Save Accumulated Flow Map
+    out_path = os.path.join(output_dir, f'flow_accumulation_{routing}.tiff')
+    save_raster(np.flipud(accum_d), res, x_vect, y_vect, out_path, crs,
+                nodata=np.nan)
+    # - Save the Logarithm of Accumulated Flow Map
+    out_path = os.path.join(output_dir, f'flow_accumulation_{routing}_log.tiff')
+    save_raster(np.flipud(np.log(accum_d)), res, x_vect, y_vect, out_path, crs)
 
-    out_path = os.path.join(output_dir, 'flow_accumulation_D8_log.tiff')
-    save_raster(np.log(np.flipud(accum_d8)), res, x_vect, y_vect, out_path, crs)
-
+    # - Plot Accumulated Flow
     fig, ax = plt.subplots(figsize=(8, 6))
     fig.patch.set_alpha(0)
     plt.grid('on', zorder=0)
-    im = ax.imshow(accum_d8, extent=extent, zorder=2,
+    im = ax.imshow(accum_d, extent=extent, zorder=2,
                    cmap='cubehelix',
-                   norm=colors.LogNorm(1, float(np.nanmax(accum_d8))),
+                   norm=colors.LogNorm(1, float(np.nanmax(accum_d))),
                    interpolation='bilinear')
-    plt.colorbar(im, ax=ax, label='Upstream Cells')
-    plt.title('Flow Accumulation', size=14)
+    plt.colorbar(im, ax=ax, label='# Upstream Cells')
+    plt.title(f'Log(Flow Accumulation) - {routing}', size=14)
     plt.xlabel('Easting')
     plt.ylabel('Northing')
-    plt.tight_layout()
     plt.savefig(os.path.join(output_dir,
-                             f'flow_accumulation_D8.{fig_format}'),
+                             f'flow_accumulation_{routing}_log.{fig_format}'),
                 dpi=dpi, format=fig_format)
     plt.close()
 
