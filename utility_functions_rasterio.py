@@ -34,10 +34,14 @@ def load_raster(in_path: str) -> dict:
         lr_corner = src.transform * (src.width, src.height)
         grid_res = src.res
 
-        # - compute x- and y-axis coordinates
+        # - compute x- and y-axis coordinates in a Matplotlib Style CRS
+        # - Note that these new axes has as origin the bottom left
+        # - of the raster image. See the link below for more details.
+        # - https://matplotlib.org/stable/tutorials/advanced/
+        # - transforms_tutorial.html
         x_coords = np.arange(ul_corner[0], lr_corner[0], grid_res[0])
-        y_coords = np.arange(lr_corner[1] + grid_res[1],
-                             ul_corner[1] + grid_res[1], grid_res[1])
+        y_coords = np.arange(lr_corner[1], ul_corner[1], grid_res[1])
+
         # - compute raster extent - (left, right, bottom, top)
         extent = [ul_corner[0], lr_corner[0], lr_corner[1], ul_corner[1]]
         # - compute cell centroids
@@ -69,7 +73,7 @@ def save_raster(raster: np.ndarray, res: Any, x: np.ndarray,
     :param raster: input raster - np.ndarray
     :param res: raster resolution - integer
     :param x: x-axis - np.ndarray
-    :param y: y-axis - np.ndarray
+    :param y: y-axis in a figure coordinate system - np.ndarray
     :param crs: - coordinates reference system
     :param out_path: absolute path to output file
     :param nbands: number of raster bands
@@ -80,6 +84,7 @@ def save_raster(raster: np.ndarray, res: Any, x: np.ndarray,
     if y[1] > y[0]:
         y = np.flipud(y)
         raster = np.flipud(raster)
+        y += res[1]
     transform = (Affine.translation(x[0], y[0])
                  * Affine.scale(res[0], -res[1]))
 
@@ -106,7 +111,7 @@ def write_tiff(raster: np.ndarray, res_x: int,  res_y: int, x: np.ndarray,
     :param res_x: raster resolution x - integer
     :param res_y: raster resolution y - integer
     :param x: x-axis - np.ndarray
-    :param y: y-axis - np.ndarray
+    :param y: y-axis in a figure coordinate system - np.ndarray
     :param crs: - coordinates reference system
     :param nbands: number of raster bands - def.1
     :param out_path: absolute path to output file
@@ -117,6 +122,7 @@ def write_tiff(raster: np.ndarray, res_x: int,  res_y: int, x: np.ndarray,
     if y[1] > y[0]:
         y = np.flipud(y)
         raster = np.flipud(raster)
+        y += res_y
     transform = (Affine.translation(x[0], y[0])
                  * Affine.scale(res_x, -res_y))
 
