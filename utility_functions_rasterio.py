@@ -24,11 +24,23 @@ import numpy as np
 from typing import Union, Any
 
 
-def load_raster(in_path: str) -> dict:
+def load_raster(in_path: str, nbands: int = 1) -> dict:
     # - Load TanDEM-X DEM raster saved in GeoTiff format
     with rasterio.open(in_path, mode="r+") as src:
         # - read band #1 - DEM elevation in meters
-        dem_input = src.read(1).astype(src.dtypes[0])
+        if nbands > 1:
+            dem_input = None
+            for nb in range(nbands):
+                if nb == 0:
+                    dem_input_temp = src.read(1).astype(src.dtypes[0])
+                    r_shape = np.shape(dem_input_temp)
+                    dem_input = np.zeros([nbands, r_shape[0], r_shape[1]])
+                    dem_input[0, :, :] = dem_input_temp
+                else:
+                    dem_input[nb, :, :] \
+                        = src.read(nb+1).astype(src.dtypes[0])
+        else:
+            dem_input = src.read(1).astype(src.dtypes[0])
         # - raster upper-left and lower-right corners
         ul_corner = src.transform * (0, 0)
         lr_corner = src.transform * (src.width, src.height)
