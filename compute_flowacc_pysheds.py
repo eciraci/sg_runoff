@@ -63,7 +63,7 @@ seaborn: statistical data visualization in Python.
 rasterio: access to geospatial raster data in Python.
     https://rasterio.readthedocs.io
 """
-
+from __future__ import print_function
 import os
 import numpy as np
 import matplotlib.pyplot as plt
@@ -72,7 +72,8 @@ import seaborn as sns
 import fiona
 from pysheds.grid import Grid
 # - Library Dependencies
-from utility_functions_rasterio import load_raster, save_raster, clip_raster
+from utils.utility_functions_rasterio import\
+    load_raster, save_raster, clip_raster
 
 
 def create_dir(abs_path: str, dir_name: str) -> str:

@@ -15,5 +15,9 @@ dependencies:
   - richdem
   - pyyaml
   - pylint
+  - cartopy
+  - geopandas
+  - xarray
   - pip:
       - pysheds
+      - matplotlib-scalebar

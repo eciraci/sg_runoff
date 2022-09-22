@@ -4,8 +4,8 @@ Written by Enrico Ciraci' - (09/2022)
 
 Test Scripts:
 Compute sub-glacial discharge flow by employing ice thickness and bed topography
-from BedMachine v4.0. Discharge flow is determined by the spatial gradient of the
-Hydraulic Potential computed at the interface between ice and bedrock.
+from BedMachine v4.0. Discharge flow is determined by the spatial gradient of
+the Hydraulic Potential computed at the interface between ice and bedrock.
 
 For more Info about tha Hydraulic Potential evaluation see:
 Cuffey & Peterson, 2006 - "The Physics of Glaciers" - Chapter #6.
@@ -61,6 +61,8 @@ seaborn: statistical data visualization in Python.
 rasterio: access to geospatial raster data in Python.
     https://rasterio.readthedocs.io
 """
+# - Python Dependencies
+from __future__ import print_function
 import os
 import numpy as np
 import matplotlib.pyplot as plt
@@ -68,7 +70,8 @@ from matplotlib import colors
 import richdem as rd
 # - Library Dependencies
 from utils.make_dir import make_dir
-from utility_functions_rasterio import load_raster, save_raster, clip_raster
+from utils.utility_functions_rasterio import \
+    load_raster, save_raster, clip_raster
 
 
 def main() -> None:
