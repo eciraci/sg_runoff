@@ -14,10 +14,11 @@ dependencies:
   - seaborn
   - richdem
   - pyyaml
-  - pylint
   - cartopy
   - geopandas
   - xarray
+  - pylint
+  - flake8
   - pip:
       - pysheds
       - matplotlib-scalebar

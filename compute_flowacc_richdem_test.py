@@ -4,7 +4,7 @@ Written by Enrico Ciraci' - (09/2022)
 
 Test Scripts:
 Compute sub-glacial discharge flow by employing ice thickness and bed topography
-from BedMachine v4.0. Discharge flow is determined by the spatial gradient of
+from BedMachine v5.0. Discharge flow is determined by the spatial gradient of
 the Hydraulic Potential computed at the interface between ice and bedrock.
 
 -> TEST: evaluate the usability of this implementation to compute sub-glacial
@@ -79,7 +79,7 @@ from utils.utility_functions_rasterio import \
 
 def main() -> None:
     # - Processing Parameters
-    routing = 'D8'     # - Selected Routing Algorithm
+    routing = 'Dinf'     # - Selected Routing Algorithm
     # - For other accumulation routing schemes:
     # - https://richdem.readthedocs.io/en/latest/python_api.html
     # - Figure Parameters

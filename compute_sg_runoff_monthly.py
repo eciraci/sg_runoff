@@ -188,18 +188,20 @@ def main() -> None:
 
     # - Domain Mask
     clip_mask = os.path.join(project_dir, 'GIS_Data', 'Petermann_Domain',
-                             f'Petermann_Drainage_Basin_EPSG3413.shp')
+                             f'{args.domain}.shp')
 
     # - Shapefile containing the points used to sample the total
     # - discharge at the grounding line.
     try:
         sample_pts_path\
-            = os.path.join(project_dir, 'GIS_Data', 'Petermann_features_extraction',
+            = os.path.join(project_dir, 'GIS_Data',
+                           'Petermann_features_extraction',
                            f'subglacial_runoff_sample_{args.routing}.shp')
         sample_pts_in = gpd.read_file(sample_pts_path)
     except:
         sample_pts_path\
-            = os.path.join(project_dir, 'GIS_Data', 'Petermann_features_extraction',
+            = os.path.join(project_dir, 'GIS_Data',
+                           'Petermann_features_extraction',
                            f'subglacial_runoff_sample.shp')
         sample_pts_in = gpd.read_file(sample_pts_path)
 
@@ -255,7 +257,6 @@ def main() -> None:
     crs = elev_input['crs']
     crs_epsg = crs.to_epsg()
     res = elev_input['res']
-    extent = elev_input['extent']
 
     # - Hydraulic Potential
     hydro_pot = ((rho_ice * gravity * surf_elev)
@@ -311,9 +312,13 @@ def main() -> None:
         = os.path.join(project_dir, 'SMB', 'RACMO2.3p2', 'output.dir',
                        f'{args.domain}', 'runoff',
                        f'{args.domain}_runoff_EPSG-{crs_epsg}_res150',
-                       f'{args.year}',
-                       f'runoff.{args.year}-{args.month:02}.BN_RACMO2.3p2'
-                       f'_ERA5_3h_FGRN055.150m_nearest.tiff')
+                       f'{args.year}')
+    racmo_f_name \
+        = [x for x in os.listdir(racmo_path)
+           if x.startswith(f'runoff.{args.year}-{args.month:02}')
+           and x.endswith('150m_nearest.tiff')][0]
+    racmo_path = os.path.join(racmo_path, racmo_f_name)
+
     runoff_input = load_raster(racmo_path)
     runoff = runoff_input['data']
     runoff_x_vect = runoff_input['x_coords']
@@ -410,6 +415,26 @@ def main() -> None:
         = os.path.join(output_dir, f'{args.domain}_weights'
                                    f'_EPSG-{crs_epsg}_res150_clip.tiff')
     clip_raster(out_weights, clip_mask, out_weights_clp, nodata=np.nan)
+
+    # - Origin Flow before accumulation
+    fig = plt.figure(figsize=(6, 10), dpi=dpi)
+    ax = fig.add_subplot(1, 1, 1)
+    im = ax.imshow(np.flipud(weights), extent=extent, zorder=2,
+                   cmap='jet', interpolation='bilinear',
+                   vmin=0, vmax=0.008)
+
+    ax.grid(color='m', linestyle='dotted', alpha=0.3)
+    ax.set_title(f'Sub-Glacial Discharge - {args.routing}', size=14)
+    ax.set_xlabel('Easting')
+    ax.set_ylabel('Northing')
+    cb_1 = add_colorbar(fig, ax, im)
+    cb_1.set_label(label=r'[${m^3}/sec$]', weight='bold')
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir,
+                             f'ice_melt_map_'
+                             f'{args.routing}.{fig_format}'),
+                dpi=dpi, format=fig_format)
+    plt.close()
 
     # -------------------------------------------
     # - Calculate flow accumulation with weights
