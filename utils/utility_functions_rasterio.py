@@ -63,7 +63,12 @@ def load_raster(in_path: str, nbands: int = 1) -> dict:
         # - the lower-left corner of the raster is considered
         # - the origin of the reference system.
         if src.transform.e < 0:
-            dem_input = np.flipud(dem_input)
+            if nbands == 1:
+                dem_input = np.flipud(dem_input)
+            else:
+                for nb in range(nbands):
+                    dem_input[nb, :, :] = np.flipud(dem_input[nb, :, :])
+
         # - Compute New Affine Transform
         transform = (Affine.translation(x_coords[0], y_coords[0])
                      * Affine.scale(src.res[0], src.res[1]))

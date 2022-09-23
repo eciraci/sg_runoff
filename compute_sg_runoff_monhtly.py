@@ -116,6 +116,7 @@ import matplotlib.pyplot as plt
 from matplotlib import colors
 import geopandas as gpd
 import richdem as rd
+import rasterio
 # - Library Dependencies
 from utils.make_dir import make_dir
 from utils.utility_functions_rasterio import \
@@ -180,14 +181,31 @@ def main() -> None:
     # - Project Data Directory
     project_dir = args.directory
     bdmch_dir = os.path.join(project_dir, 'BedMachine', 'output.dir')
-    output_dir = make_dir(bdmch_dir, 'subglacial_runoff_petermann')
+    output_dir = make_dir(bdmch_dir, f'subglacial_runoff_petermann')
     output_dir = make_dir(output_dir, args.domain)
     output_dir = make_dir(output_dir, f'{args.month:02}-{args.year}')
     output_dir = make_dir(output_dir, args.routing)
 
     # - Domain Mask
     clip_mask = os.path.join(project_dir, 'GIS_Data', 'Petermann_Domain',
-                             f'{args.domain}.shp')
+                             f'Petermann_Drainage_Basin_EPSG3413.shp')
+
+    # - Shapefile containing the points used to sample the total
+    # - discharge at the grounding line.
+    try:
+        sample_pts_path\
+            = os.path.join(project_dir, 'GIS_Data', 'Petermann_features_extraction',
+                           f'subglacial_runoff_sample_{args.routing}.shp')
+        sample_pts_in = gpd.read_file(sample_pts_path)
+    except:
+        sample_pts_path\
+            = os.path.join(project_dir, 'GIS_Data', 'Petermann_features_extraction',
+                           f'subglacial_runoff_sample.shp')
+        sample_pts_in = gpd.read_file(sample_pts_path)
+
+    sample_ps_iter = []
+    for pt in sample_pts_in.geometry:
+        sample_ps_iter.append((pt.xy[0][0], pt.xy[1][0]))
 
     # - Absolute Path to BedMachine Data
     # - NOTE - these estimates must be computed before running the script.
@@ -247,7 +265,7 @@ def main() -> None:
     hydro_pot[ice_mask == 0] = np.nan
     # -
     out_path = os.path.join(output_dir, f'{args.domain}_hydro_pot_res150.tiff')
-    save_raster(hydro_pot, res, x_vect, y_vect, out_path, crs)
+    save_raster(hydro_pot, res, x_vect.copy(), y_vect.copy(), out_path, crs)
 
     # - Clip Hydraulic Potential over the actual drainage basin
     out_path_clip = out_path.replace('_hydro_pot',
@@ -256,9 +274,12 @@ def main() -> None:
 
     # - Load Clipped Mask
     hydro_pot_in = load_raster(out_path_clip)
-    hydro_pot_clp = np.flipud(hydro_pot_in['data'])
+    hydro_pot_clp = hydro_pot_in['data']
+    x_vect = hydro_pot_in['x_coords']
+    y_vect = hydro_pot_in['y_coords']
+    extent = elev_input['extent']
     hydro_pot = hydro_pot_clp
-    ice_mask_clp = np.where(np.isnan(hydro_pot_clp))
+    ice_mask_clp = np.where(np.isnan(np.flipud(hydro_pot_clp)))
 
     print('# - Compute Accumulated Sub-Glacial Flow using RichDEM.')
     dem = rd.LoadGDAL(out_path_clip, no_data=-9999)
@@ -279,6 +300,10 @@ def main() -> None:
     cb_1 = add_colorbar(fig, ax, im)
     cb_1.set_label(label=r'[$kg/m/s^2$]', weight='bold')
     plt.tight_layout()
+    plt.savefig(os.path.join(output_dir,
+                             f'hydraulic_potential_map_'
+                             f'{args.routing}.{fig_format}'),
+                dpi=dpi, format=fig_format)
     plt.close()
 
     # - Load Runoff estimates from RACMO 2.3p2
@@ -305,6 +330,7 @@ def main() -> None:
     velocity = velocity_input['data']
     velocity_x_vect = velocity_input['x_coords']
     velocity_y_vect = velocity_input['y_coords']
+
     # - Compute velocity magnitude
     velocity_mag = np.sqrt((velocity[0, :, :]**2) + (velocity[1, :, :]**2))
 
@@ -332,14 +358,14 @@ def main() -> None:
     ind_v_x = np.where((velocity_x_vect >= x_min) & (velocity_x_vect <= x_max))
     ind_v_y = np.where((velocity_y_vect >= y_min) & (velocity_y_vect <= y_max))
     ind_v_xx, ind_v_yy = np.meshgrid(ind_v_x, ind_v_y)
-    velocity_mag = np.flipud(velocity_mag[ind_v_yy, ind_v_xx])
+    velocity_mag = velocity_mag[ind_v_yy, ind_v_xx]
 
     # - Save the Obtained Rasters
     # - Hydraulic potential
     out_hp_crp \
         = os.path.join(output_dir, f'{args.domain}_hydro_pot'
                                    f'_EPSG-{crs_epsg}_res150_crop.tiff')
-    save_raster(hydro_pot, res, x_vect_crp, y_vect_crp,
+    save_raster(hydro_pot, res, x_vect_crp.copy(), y_vect_crp.copy(),
                 out_hp_crp, crs)
     ice_mask_crp = np.where(np.isnan(np.flipud(hydro_pot)))
 
@@ -347,13 +373,14 @@ def main() -> None:
     out_rf_crp \
         = os.path.join(output_dir, f'{args.domain}_runoff'
                                    f'_EPSG-{crs_epsg}_res150_crop.tiff')
-    save_raster(runoff, res, x_vect_crp, y_vect_crp, out_rf_crp, crs)
+    save_raster(runoff, res, x_vect_crp.copy(), y_vect_crp.copy(),
+                out_rf_crp, crs)
 
     # - velocity magnitude
     out_vel_crp \
         = os.path.join(output_dir, f'{args.domain}_velocity_magnitude'
                                    f'_EPSG-{crs_epsg}_res150_crop.tiff')
-    save_raster(velocity_mag, res, x_vect_crp, y_vect_crp,
+    save_raster(velocity_mag, res, x_vect_crp.copy(), y_vect_crp.copy(),
                 out_vel_crp, crs)
 
     # - Compute Melt Production components
@@ -377,14 +404,12 @@ def main() -> None:
     out_weights \
         = os.path.join(output_dir, f'{args.domain}_weights'
                                    f'_EPSG-{crs_epsg}_res150_crop.tiff')
-    save_raster(weights, res, x_vect_crp, y_vect_crp,
+    save_raster(weights, res, x_vect_crp.copy(), y_vect_crp.copy(),
                 out_weights, crs)
     out_weights_clp \
         = os.path.join(output_dir, f'{args.domain}_weights'
                                    f'_EPSG-{crs_epsg}_res150_clip.tiff')
     clip_raster(out_weights, clip_mask, out_weights_clp, nodata=np.nan)
-    weights_in = load_raster(out_weights_clp)
-    weights = np.flipud(weights_in['data'])
 
     # -------------------------------------------
     # - Calculate flow accumulation with weights
@@ -394,7 +419,7 @@ def main() -> None:
     rd.FillDepressions(dem_c, epsilon=True, in_place=True)
     # - Get flow accumulation with no explicit weighting. The default will be 1.
     accum_dw = rd.FlowAccumulation(dem_c, method=args.routing, weights=weights)
-    rd.rdShow(accum_dw, zxmin=450, zxmax=550, zymin=550, zymax=450,
+    rd.rdShow(np.flipud(accum_dw), zxmin=450, zxmax=550, zymin=550, zymax=450,
               figsize=(6, 9), axes=False, cmap='jet')
     plt.close()
 
@@ -404,16 +429,23 @@ def main() -> None:
     plt.close()
 
     accum_dw[ice_mask_crp] = np.nan
-    # - Save Accumulated Flow Map
+    # - Save Sub-Glacier Discharges Map
     out_path \
-        = os.path.join(output_dir, f'flow_accumulation_{args.routing}.tiff')
-    save_raster(np.flipud(accum_dw), res, x_vect, y_vect, out_path, crs,
+        = os.path.join(output_dir, f'sub_glacial_discharge_map_'
+                                   f'{args.routing}.tiff')
+    save_raster(accum_dw, res, x_vect.copy(), y_vect.copy(), out_path, crs,
                 nodata=np.nan)
+
+    # - Sample the computed Accumulated floe
+    src = rasterio.open(out_path)
+    sample_pts_in['value'] = [x for x in src.sample(sample_ps_iter)]
+    total_discharge = sample_pts_in['value'].sum()[0]
+    print(f'# - Total Discharge at GL [m3/sec]: {total_discharge:.2f}')
 
     # - Plot Accumulated Flow
     fig = plt.figure(figsize=(6, 10), dpi=dpi)
     ax = fig.add_subplot(1, 1, 1)
-    im = ax.imshow(accum_dw, extent=extent, zorder=2,
+    im = ax.imshow(np.flipud(accum_dw), extent=extent, zorder=2,
                    cmap='Reds',  interpolation='bilinear',
                    vmin=0, vmax=0.008)
 
@@ -421,13 +453,17 @@ def main() -> None:
     ax.set_title(f'Sub-Glacial Discharge - {args.routing}', size=14)
     ax.set_xlabel('Easting')
     ax.set_ylabel('Northing')
+    ann_txt = f'Total Discharge at GL [m3/sec]: {total_discharge:.2f}'
+    ax.annotate(ann_txt, xy=(0.03, 0.03), xycoords="axes fraction",
+                size=12, zorder=100,
+                bbox=dict(boxstyle="square", fc="w"))
 
     cb_1 = add_colorbar(fig, ax, im)
     cb_1.set_label(label=r'[${m^3}/sec$]', weight='bold')
     plt.tight_layout()
     plt.savefig(os.path.join(output_dir,
-                             f'flow_accumulation_{args.routing}'
-                             f'+weights.{fig_format}'),
+                             f'sub_glacial_discharge_map_'
+                             f'{args.routing}.{fig_format}'),
                 dpi=dpi, format=fig_format)
     plt.close()
 
