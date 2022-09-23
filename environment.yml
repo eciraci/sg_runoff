@@ -1,0 +1,24 @@
+name: sgrunoff
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - setuptools
+  - pip
+  - numpy
+  - scipy
+  - matplotlib
+  - gdal
+  - rasterio
+  - fiona
+  - seaborn
+  - richdem
+  - pyyaml
+  - cartopy
+  - geopandas
+  - xarray
+  - pylint
+  - flake8
+  - pip:
+      - pysheds
+      - matplotlib-scalebar
