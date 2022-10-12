@@ -113,10 +113,10 @@ import os
 import argparse
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib import colors
 import geopandas as gpd
 import richdem as rd
 import rasterio
+import fiona
 # - Library Dependencies
 from utils.make_dir import make_dir
 from utils.utility_functions_rasterio import \
@@ -198,7 +198,7 @@ def main() -> None:
                            'Petermann_features_extraction',
                            f'subglacial_runoff_sample_{args.routing}.shp')
         sample_pts_in = gpd.read_file(sample_pts_path)
-    except:
+    except fiona.errors.DriverError:
         sample_pts_path\
             = os.path.join(project_dir, 'GIS_Data',
                            'Petermann_features_extraction',
@@ -297,7 +297,7 @@ def main() -> None:
     ax.set_title(f'Hydraulic Potential Map', size=14)
     ax.set_xlabel('Easting')
     ax.set_ylabel('Northing')
-
+    # - Add Colorbar
     cb_1 = add_colorbar(fig, ax, im)
     cb_1.set_label(label=r'[$kg/m/s^2$]', weight='bold')
     plt.tight_layout()
@@ -349,7 +349,7 @@ def main() -> None:
     ind_hp_x = np.where((x_vect >= x_min) & (x_vect <= x_max))
     ind_hp_y = np.where((y_vect >= y_min) & (y_vect <= y_max))
     ind_hp_xx, ind_hp_yy = np.meshgrid(ind_hp_x, ind_hp_y)
-    hydro_pot = np.flipud(hydro_pot[ind_hp_yy, ind_hp_xx])
+    hydro_pot = hydro_pot[ind_hp_yy, ind_hp_xx]
     x_vect_crp = x_vect[ind_hp_x]
     y_vect_crp = y_vect[ind_hp_y]
 
@@ -364,15 +364,18 @@ def main() -> None:
     ind_v_y = np.where((velocity_y_vect >= y_min) & (velocity_y_vect <= y_max))
     ind_v_xx, ind_v_yy = np.meshgrid(ind_v_x, ind_v_y)
     velocity_mag = velocity_mag[ind_v_yy, ind_v_xx]
+    print(f'# - Average Velocity Magnitude over '
+          f'the considered area: {np.nanmean(velocity_mag ):.3f}')
 
     # - Save the Obtained Rasters
     # - Hydraulic potential
     out_hp_crp \
         = os.path.join(output_dir, f'{args.domain}_hydro_pot'
                                    f'_EPSG-{crs_epsg}_res150_crop.tiff')
-    save_raster(hydro_pot, res, x_vect_crp.copy(), y_vect_crp.copy(),
+    save_raster(np.flipud(hydro_pot), res, x_vect_crp.copy(), y_vect_crp.copy(),
                 out_hp_crp, crs)
-    ice_mask_crp = np.where(np.isnan(np.flipud(hydro_pot)))
+
+    ice_mask_crp = np.where(np.isnan(hydro_pot))
 
     # - runoff
     out_rf_crp \
@@ -444,14 +447,14 @@ def main() -> None:
     rd.FillDepressions(dem_c, epsilon=True, in_place=True)
     # - Get flow accumulation with no explicit weighting. The default will be 1.
     accum_dw = rd.FlowAccumulation(dem_c, method=args.routing, weights=weights)
-    rd.rdShow(np.flipud(accum_dw), zxmin=450, zxmax=550, zymin=550, zymax=450,
-              figsize=(6, 9), axes=False, cmap='jet')
-    plt.close()
+    # rd.rdShow(np.flipud(accum_dw), zxmin=450, zxmax=550, zymin=550, zymax=450,
+    #           figsize=(6, 9), axes=False, cmap='jet')
+    # plt.close()
 
     # - Compute terrain attributed
     slope = rd.TerrainAttribute(dem, attrib='aspect')
-    rd.rdShow(slope, axes=False, cmap='jet', figsize=(6, 9))
-    plt.close()
+    # rd.rdShow(slope, axes=False, cmap='jet', figsize=(6, 9))
+    # plt.close()
 
     accum_dw[ice_mask_crp] = np.nan
     # - Save Sub-Glacier Discharges Map
@@ -491,6 +494,25 @@ def main() -> None:
                              f'{args.routing}.{fig_format}'),
                 dpi=dpi, format=fig_format)
     plt.close()
+
+    # - Overwrite previously saved Hydraulic potential Map
+    out_hp_crp \
+        = os.path.join(output_dir, f'{args.domain}_hydro_pot'
+                                   f'_EPSG-{crs_epsg}_res150_crop.tiff')
+    save_raster(hydro_pot, res, x_vect_crp.copy(), y_vect_crp.copy(),
+                out_hp_crp, crs)
+
+    # - generate a binary map with values different from zero only
+    # - for channels with discharge values above a certain threshold.
+    bin_thresh = 3
+    dich_bin = np.full(np.shape(accum_dw), np.nan)
+    dich_bin[accum_dw >= bin_thresh] = 1
+    # -
+    out_hp_crp \
+        = os.path.join(output_dir, f'sub_glacial_discharge_map_binary_'
+                                   f'{args.routing}.tiff')
+    save_raster(dich_bin, res, x_vect_crp.copy(), y_vect_crp.copy(),
+                out_hp_crp, crs)
 
 
 if __name__ == '__main__':

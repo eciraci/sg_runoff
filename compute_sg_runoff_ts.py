@@ -380,7 +380,7 @@ def main() -> None:
                 ind_hp_x = np.where((x_vect >= x_min) & (x_vect <= x_max))
                 ind_hp_y = np.where((y_vect >= y_min) & (y_vect <= y_max))
                 ind_hp_xx, ind_hp_yy = np.meshgrid(ind_hp_x, ind_hp_y)
-                hydro_pot = np.flipud(hydro_pot[ind_hp_yy, ind_hp_xx])
+                hydro_pot = hydro_pot[ind_hp_yy, ind_hp_xx]
                 x_vect_crp = x_vect[ind_hp_x]
                 y_vect_crp = y_vect[ind_hp_y]
 
@@ -393,7 +393,7 @@ def main() -> None:
                 save_raster(hydro_pot, res, x_vect_crp.copy(), y_vect_crp.copy(),
                             out_hp_crp, crs)
                 ice_mask_crp = np.where(np.isnan(np.flipud(hydro_pot)))
-
+                # - Initialize RichDEM Object
                 # -------------------------------------------
                 # - Calculate flow accumulation with weights
                 # -------------------------------------------
@@ -446,9 +446,9 @@ def main() -> None:
             # - Save Sub-Glacier Discharges Map
             out_path \
                 = os.path.join(out_dir_mnth,
-                               f'sub_glacial_discharge_map_{year}-{month:02}'
+                               f'sub_glacial_discharge_map_{year}-{month:02}_'
                                f'{args.routing}.tiff')
-            save_raster(accum_dw, res, x_vect.copy(), y_vect.copy(),
+            save_raster(np.flipud(accum_dw), res, x_vect.copy(), y_vect.copy(),
                         out_path, crs, nodata=np.nan)
             # - Sample the computed Accumulated floe
             src = rasterio.open(out_path)
@@ -462,7 +462,7 @@ def main() -> None:
     # - save the obtained datasets inside a netcdf archive
     file_to_save \
         = os.path.join(output_dir, f'{args.domain}_sub_glacial_discharge'
-                                   f'_routinig-{args.routing}'
+                                   f'_routing-{args.routing}'
                                    f'_{args.f_year}'
                                    f'_{args.l_year}.nc')
     time_ax_out = []
