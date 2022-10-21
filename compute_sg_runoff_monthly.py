@@ -106,6 +106,8 @@ seaborn: statistical data visualization in Python.
     https://seaborn.pydata.org/
 rasterio: access to geospatial raster data in Python.
     https://rasterio.readthedocs.io
+scikit-image: Image processing in Python.
+    https://scikit-image.org/
 """
 # - Python Dependencies
 from __future__ import print_function
@@ -117,6 +119,7 @@ import geopandas as gpd
 import richdem as rd
 import rasterio
 import fiona
+from skimage.morphology import skeletonize
 # - Library Dependencies
 from utils.make_dir import make_dir
 from utils.utility_functions_rasterio import \
@@ -502,7 +505,7 @@ def main() -> None:
     save_raster(hydro_pot, res, x_vect_crp.copy(), y_vect_crp.copy(),
                 out_hp_crp, crs)
 
-    # - generate a binary map with values different from zero only
+    # - Generate a binary map with values different from zero only
     # - for channels with discharge values above a certain threshold.
     bin_thresh = 3
     dich_bin = np.full(np.shape(accum_dw), np.nan)
@@ -512,6 +515,21 @@ def main() -> None:
         = os.path.join(output_dir, f'sub_glacial_discharge_map_binary_'
                                    f'{args.routing}.tiff')
     save_raster(dich_bin, res, x_vect_crp.copy(), y_vect_crp.copy(),
+                out_hp_crp, crs)
+
+    # - Skeletonize the binary map
+    sk_thresh = 1       # - Threshold for skeletonization
+    dich_bin = np.zeros(np.shape(accum_dw))
+    dich_bin[accum_dw >= sk_thresh] = 1
+    skeleton = skeletonize(dich_bin)
+    skeleton_bin = np.full(np.shape(accum_dw), np.nan)
+    skeleton_bin[np.array(skeleton) == 1] = 1
+
+    # - Export discharge binary map
+    out_hp_crp \
+        = os.path.join(output_dir, f'sub_glacial_discharge_map_binary_skeleton_'
+                                   f'{args.routing}.tiff')
+    save_raster(skeleton_bin, res, x_vect_crp.copy(), y_vect_crp.copy(),
                 out_hp_crp, crs)
 
 
