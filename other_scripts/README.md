@@ -1,0 +1,2 @@
+# Other Scripts 
+ This directory contains scripts that are not part of the main pipeline but just preliminary tests used to evaluate performance offered by RichDEM and Pysheds in the calculation of accumulated flow.

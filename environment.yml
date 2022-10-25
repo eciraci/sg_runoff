@@ -19,6 +19,7 @@ dependencies:
   - xarray
   - pylint
   - flake8
+  - xarray
   - pip:
       - pysheds
       - matplotlib-scalebar

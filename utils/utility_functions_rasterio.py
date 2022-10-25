@@ -16,6 +16,7 @@ from rasterio.transform import Affine
 from rasterio.enums import Resampling
 from rasterio import shutil as rio_shutil
 from rasterio.vrt import WarpedVRT
+from rasterio import MemoryFile
 import fiona
 import rasterio.mask
 import affine
@@ -277,3 +278,42 @@ def clip_raster(src_file: str, ref_shp: str, out_file: str,
         dest.write(out_raster)
 
     return out_file
+
+
+def sample_in_memory_dataset(raster: np.ndarray, res: Any, x: np.ndarray,
+                             y: np.ndarray, crs: int,
+                             sample_ps_iter: list[tuple], nodata=np.nan):
+    """
+    Sample In-Memory Dataset
+    :param raster: input raster - np.ndarray
+    :param res: raster resolution - [xres, yres]
+    :param x: x-axis coordinates - np.ndarray
+    :param y: y-axis coordinates - np.ndarray
+    :param crs: epsg code crs
+    :param sample_ps_iter: list of tuples containing x, y coordinates
+    :param nodata: input raster nodata
+    :return: list of sampled values
+    """
+    if y[1] > y[0]:
+        y = np.flipud(y)
+        raster = np.flipud(raster)
+        y += res[1]
+    transform = (Affine.translation(x[0], y[0])
+                 * Affine.scale(res[0], -res[1]))
+    out_meta = {'driver': 'GTiff',
+                'height': raster.shape[0],
+                'width': raster.shape[1],
+                'nodata': nodata,
+                'dtype': str(raster.dtype),
+                'compress': 'lzw',
+                'count': 1,
+                'crs': crs,
+                'transform': transform}
+    with MemoryFile() as memfile:
+        with memfile.open(**out_meta) as dataset:
+            dataset.write(raster, 1)
+        with memfile.open() as src:
+            sampled_pts = [x for x in src.sample(sample_ps_iter)]
+            sampled_pts = [x[0] for x in sampled_pts]
+
+    return sampled_pts
