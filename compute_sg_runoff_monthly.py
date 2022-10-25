@@ -86,6 +86,7 @@ options:
   --year YEAR, -Y YEAR  Year of interest [def. 2017].
   --month MONTH, -m MONTH
                         Month of interest [def. 7 - July].
+  --show                Show intermediate results.
 
 
 To Run this script digit:
@@ -155,8 +156,10 @@ def main() -> None:
     parser.add_argument('--month', '-M', type=int, default=7,
                         help='Month of interest [def. 7 - July].')
 
+    parser.add_argument('--show', action='store_true',
+                       help='Show intermediate results.')
+
     # - Processing Parameters
-    domain_name = 'Petermann_Drainage_Basin'       # - integration domain
     args = parser.parse_args()
 
     # - Conversion Parameters
@@ -171,11 +174,11 @@ def main() -> None:
     # - Basal Friction Melt Production
     # - melt = 1e5 x v (in meters per second) x area / rho_i / L / 2.
     tau = 1e5
-    n_sec_year = 365*24*60*68
-    n_sec_month = 30*24*60*68
+    n_sec_year = 365 * 24 * 60 * 68
+    n_sec_month = 30 * 24 * 60 * 68
 
     # - Pixel Area [m2]
-    pixel_area = 150*150
+    pixel_area = 150 * 150
 
     # - Figure Parameters
     fig_format = 'jpeg'
@@ -212,8 +215,8 @@ def main() -> None:
     for pt in sample_pts_in.geometry:
         sample_ps_iter.append((pt.xy[0][0], pt.xy[1][0]))
 
-    # - Absolute Path to BedMachine Data
-    # - NOTE - these estimates must be computed before running the script.
+    # - Absolute Path to Interpolated and Cropped BedMachine Data
+    # - NOTE - Need to compute the data listed below before running the script.
     # - Bedrock
     bed_path \
         = os.path.join(bdmch_dir, 'BedMachineGreenland-version_05_bed',
@@ -283,6 +286,8 @@ def main() -> None:
     y_vect = hydro_pot_in['y_coords']
     extent = elev_input['extent']
     hydro_pot = hydro_pot_clp
+    # - Need to use flipud here because when loaded using RichDEM
+    # - y-axis direction of is inverted.
     ice_mask_clp = np.where(np.isnan(np.flipud(hydro_pot_clp)))
 
     print('# - Compute Accumulated Sub-Glacial Flow using RichDEM.')
@@ -356,17 +361,18 @@ def main() -> None:
     x_vect_crp = x_vect[ind_hp_x]
     y_vect_crp = y_vect[ind_hp_y]
 
+    # - Ice Velocity Magnitude
+    ind_v_x = np.where((velocity_x_vect >= x_min) & (velocity_x_vect <= x_max))
+    ind_v_y = np.where((velocity_y_vect >= y_min) & (velocity_y_vect <= y_max))
+    ind_v_xx, ind_v_yy = np.meshgrid(ind_v_x, ind_v_y)
+    velocity_mag = velocity_mag[ind_v_yy, ind_v_xx]
+
     # - Runoff
     ind_rf_x = np.where((runoff_x_vect >= x_min) & (runoff_x_vect <= x_max))
     ind_rf_y = np.where((runoff_y_vect >= y_min) & (runoff_y_vect <= y_max))
     ind_rf_xx, ind_rf_yy = np.meshgrid(ind_rf_x, ind_rf_y)
     runoff = runoff[ind_rf_yy, ind_rf_xx]
 
-    # - Ice Velocity Magnitude
-    ind_v_x = np.where((velocity_x_vect >= x_min) & (velocity_x_vect <= x_max))
-    ind_v_y = np.where((velocity_y_vect >= y_min) & (velocity_y_vect <= y_max))
-    ind_v_xx, ind_v_yy = np.meshgrid(ind_v_x, ind_v_y)
-    velocity_mag = velocity_mag[ind_v_yy, ind_v_xx]
     print(f'# - Average Velocity Magnitude over '
           f'the considered area: {np.nanmean(velocity_mag ):.3f}')
 
@@ -375,7 +381,8 @@ def main() -> None:
     out_hp_crp \
         = os.path.join(output_dir, f'{args.domain}_hydro_pot'
                                    f'_EPSG-{crs_epsg}_res150_crop.tiff')
-    save_raster(np.flipud(hydro_pot), res, x_vect_crp.copy(), y_vect_crp.copy(),
+    # - Save Hydraulic Potential
+    save_raster(hydro_pot, res, x_vect_crp.copy(), y_vect_crp.copy(),
                 out_hp_crp, crs)
 
     ice_mask_crp = np.where(np.isnan(hydro_pot))
@@ -415,7 +422,7 @@ def main() -> None:
     out_weights \
         = os.path.join(output_dir, f'{args.domain}_weights'
                                    f'_EPSG-{crs_epsg}_res150_crop.tiff')
-    save_raster(weights, res, x_vect_crp.copy(), y_vect_crp.copy(),
+    save_raster(weights.copy(), res, x_vect_crp.copy(), y_vect_crp.copy(),
                 out_weights, crs)
     out_weights_clp \
         = os.path.join(output_dir, f'{args.domain}_weights'
@@ -446,26 +453,24 @@ def main() -> None:
     # - Calculate flow accumulation with weights
     # -------------------------------------------
     dem_c = rd.LoadGDAL(out_hp_crp, no_data=-9999)
+    dem_c = rd.rdarray(np.flipud(dem_c), no_data=-9999)
     # - Fill depressions with epsilon gradient to ensure drainage
     rd.FillDepressions(dem_c, epsilon=True, in_place=True)
     # - Get flow accumulation with no explicit weighting. The default will be 1.
     accum_dw = rd.FlowAccumulation(dem_c, method=args.routing, weights=weights)
-    # rd.rdShow(np.flipud(accum_dw), zxmin=450, zxmax=550, zymin=550, zymax=450,
-    #           figsize=(6, 9), axes=False, cmap='jet')
-    # plt.close()
 
-    # - Compute terrain attributed
-    slope = rd.TerrainAttribute(dem, attrib='aspect')
-    # rd.rdShow(slope, axes=False, cmap='jet', figsize=(6, 9))
-    # plt.close()
+    if args.show:
+        rd.rdShow(np.flipud(accum_dw), zxmin=450, zxmax=550, zymin=550, zymax=450,
+                  figsize=(6, 9), axes=False, cmap='jet')
+        plt.close()
 
     accum_dw[ice_mask_crp] = np.nan
     # - Save Sub-Glacier Discharges Map
     out_path \
         = os.path.join(output_dir, f'sub_glacial_discharge_map_'
                                    f'{args.routing}.tiff')
-    save_raster(accum_dw, res, x_vect.copy(), y_vect.copy(), out_path, crs,
-                nodata=np.nan)
+    save_raster(accum_dw, res, x_vect_crp.copy(), y_vect_crp.copy(),
+                out_path, crs, nodata=np.nan)
 
     # - Sample the computed Accumulated floe
     src = rasterio.open(out_path)
@@ -497,13 +502,6 @@ def main() -> None:
                              f'{args.routing}.{fig_format}'),
                 dpi=dpi, format=fig_format)
     plt.close()
-
-    # - Overwrite previously saved Hydraulic potential Map
-    out_hp_crp \
-        = os.path.join(output_dir, f'{args.domain}_hydro_pot'
-                                   f'_EPSG-{crs_epsg}_res150_crop.tiff')
-    save_raster(hydro_pot, res, x_vect_crp.copy(), y_vect_crp.copy(),
-                out_hp_crp, crs)
 
     # - Generate a binary map with values different from zero only
     # - for channels with discharge values above a certain threshold.
