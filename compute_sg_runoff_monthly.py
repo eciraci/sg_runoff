@@ -93,7 +93,6 @@ To Run this script digit:
 
 $ python compute_sg_runoff_monthly.py ...
 
-
 PYTHON DEPENDENCIES:
 RichDEM:High-Performance Terrain Analysis
     https://richdem.readthedocs.io
@@ -127,7 +126,7 @@ from skimage.morphology import skeletonize
 # - Library Dependencies
 from utils.make_dir import make_dir
 from utils.utility_functions_rasterio import \
-    load_raster, save_raster, clip_raster
+    load_raster, save_raster, clip_raster, sample_in_memory_dataset
 from utils.mpl_utils import add_colorbar
 # -
 plt.rc('font', family='monospace')
@@ -191,8 +190,8 @@ def main() -> None:
     fig_format = 'jpeg'
     dpi = 300
     # - Thresholds used to:
-    bin_thresh = 3      # - generate discharge binary mask
-    sk_thresh = 1       # - generate discharge skeletonized map
+    bin_thresh = 0.05        # - generate discharge binary mask
+    sk_thresh = 1            # - generate discharge skeletonized map
 
     # - Project Data Directory
     project_dir = args.directory
@@ -488,10 +487,11 @@ def main() -> None:
     save_raster(accum_dw, res, x_vect_crp.copy(), y_vect_crp.copy(),
                 out_path, crs, nodata=np.nan)
 
-    # - Sample the computed Accumulated floe
-    src = rasterio.open(out_path)
-    sample_pts_in['value'] = [x for x in src.sample(sample_ps_iter)]
-    total_discharge = sample_pts_in['value'].sum()[0]
+    # - Sample the computed Accumulated flow at the points of interest
+    sampled_pts = sample_in_memory_dataset(accum_dw, res, x_vect_crp.copy(),
+                                           y_vect_crp.copy(),
+                                           crs, sample_ps_iter, nodata=np.nan)
+    total_discharge = np.sum(sampled_pts)
     print(f'# - Total Discharge at GL [m3/sec]: {total_discharge:.2f}')
 
     # - Plot Accumulated Flow
