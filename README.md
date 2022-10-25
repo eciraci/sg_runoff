@@ -81,7 +81,7 @@ Compute the runoff generated within each domain pixel that will be routed accord
 [matplotlib: Library for creating static, animated, and interactive visualizations in Python.]:https://matplotlib.org
 [tqdm: A Fast, Extensible Progress Bar for Python and CLI.]: https://github.com/tqdm/tqdm
 [necdft4: Provides an object-oriented python interface to the netCDF version 4 library.]:https://pypi.org/project/netCDF4/
-[fiona: Fiona is GDAL’s neat and nimble vector API for Python programmers.] :https://fiona.readthedocs.io/en/latest/
+[fiona: Fiona is GDAL’s neat and nimble vector API for Python programmers.]:https://fiona.readthedocs.io/en/latest/
 [numpy: The fundamental package for scientific computing with Python.]:https://numpy.org
 
 [Cuffey & Peterson, 2006 - "The Physics of Glaciers" - Chapter #6]:https://www.elsevier.com/books/the-physics-of-glaciers/cuffey/978-0-12-369461-4
