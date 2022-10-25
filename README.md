@@ -4,7 +4,7 @@
 
 ### Calculate subglacial discharge for the selected ice covered basin.
 
-### Theory:
+#### Theory:
 Evaluate discharge flow direction based on the Hydraulic Potential gradient evaluated at the interface between ice and bedrock. The definition of Hydraulic Potential and its calculation is presented in:
 [Cuffey & Peterson, 2006 - "The Physics of Glaciers" - Chapter #6][].
 
@@ -48,7 +48,7 @@ Compute the runoff generated within each domain pixel that will be routed accord
 
 **Note**: In both cases, the factor 2 is included to the formula based on the assumption that only 50% of heat produced by these two processes is available for ice melt production.
 
-### Installation:
+#### Installation:
 
 1. Setup minimal **conda** installation using [Miniconda][]
 
@@ -59,7 +59,7 @@ Compute the runoff generated within each domain pixel that will be routed accord
     >     ([Link][2])  -> **Recommended**;
 
 
-### PYTHON DEPENDENCIES:
+#### PYTHON DEPENDENCIES:
 - [RichDEM: High-Performance Terrain Analysis][]
 - [rasterio: access to geospatial raster data][]
 - [fiona: Fiona is GDAL’s neat and nimble vector API for Python programmers.][]
