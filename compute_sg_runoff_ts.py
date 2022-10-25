@@ -89,8 +89,9 @@ optional arguments:
                         First Year of the selected period [def. 1958].
   --l_year L_YEAR, -L L_YEAR
                         Last Year of the selected period [def. 2021].
-
-
+  --save_monthly, -M    Save estimated sub-glacial discharge monthly maps.
+  --netcdf, -N          Save estimated sub-glacial discharge monthly maps
+                        in NetCDF format.
 
 To Run this script digit:
 
@@ -114,6 +115,8 @@ geopandas: open source project to make working with geospatial data in python.
     https://geopandas.org
 netcdf4: netcdf4-python is a Python interface to the netCDF C library.
     https://unidata.github.io/netcdf4-python/
+xarray: N-D labeled arrays and datasets in Python.
+    https://docs.xarray.dev/en/stable/
 """
 # - Python Dependencies
 from __future__ import print_function
@@ -124,13 +127,14 @@ import matplotlib.pyplot as plt
 import geopandas as gpd
 import netCDF4 as nC4
 import richdem as rd
-import rasterio
+import xarray as xr
 import datetime
 # - Library Dependencies
 from utils.make_dir import make_dir
 from utils.utility_functions_rasterio import \
-    load_raster, save_raster, clip_raster
+    load_raster, save_raster, clip_raster, sample_in_memory_dataset
 from utils.mpl_utils import add_colorbar
+from utils.load_velocity_map import load_velocity_map_nearest
 # -
 plt.rc('font', family='monospace')
 plt.rc('font', weight='bold')
@@ -140,8 +144,8 @@ plt.style.use('seaborn-deep')
 def main() -> None:
     # - Read the system arguments listed after the program
     parser = argparse.ArgumentParser(
-        description="""Compute sub-glacial discharge monthly time series over the 
-            selected domain."""
+        description="""Compute sub-glacial discharge monthly time series 
+        over the selected domain."""
     )
     # - Optional Arguments
     project_dir = os.path.join('/', 'Volumes', 'Extreme Pro')
@@ -161,8 +165,15 @@ def main() -> None:
     parser.add_argument('--l_year', '-L', type=int, default=2021,
                         help='Last Year of the selected period [def. 2021].')
 
+    parser.add_argument('--save_monthly', '-M', action='store_true',
+                        help='Save estimated sub-glacial discharge '
+                             'monthly maps.')
+
+    parser.add_argument('--netcdf', '-N', action='store_true',
+                        help='Save estimated sub-glacial discharge monthly maps'
+                             ' in NetCDF format.')
+
     # - Processing Parameters
-    domain_name = 'Petermann_Drainage_Basin'  # - integration domain
     args = parser.parse_args()
 
     # - Conversion Parameters
@@ -177,8 +188,8 @@ def main() -> None:
     # - Basal Friction Melt Production
     # - melt = 1e5 x v (in meters per second) x area / rho_i / L / 2.
     tau = 1e5
-    n_sec_year = 365 * 24 * 60 * 68
-    n_sec_month = 30 * 24 * 60 * 68
+    n_sec_year = 365 * 24 * 60 * 60
+    n_sec_month = 30 * 24 * 60 * 60
 
     # - Pixel Area [m2]
     pixel_area = 150 * 150
@@ -272,7 +283,7 @@ def main() -> None:
 
     # - Consider only ice-covered regions
     hydro_pot[ice_mask == 0] = np.nan
-    # -
+    # - Hydraulic Potential in GeoTiff format
     out_path = os.path.join(output_dir, f'{args.domain}_hydro_pot_res150.tiff')
     save_raster(hydro_pot, res, x_vect.copy(), y_vect.copy(), out_path, crs)
 
@@ -288,11 +299,14 @@ def main() -> None:
     y_vect = hydro_pot_in['y_coords']
     extent = elev_input['extent']
     hydro_pot = hydro_pot_clp
+    # - Need to use flipud here because when loaded using RichDEM
+    # - y-axis direction of is inverted.
     ice_mask_clp = np.where(np.isnan(np.flipud(hydro_pot_clp)))
 
     print('# - Compute Accumulated Sub-Glacial Flow using RichDEM.')
     dem = rd.LoadGDAL(out_path_clip, no_data=-9999)
     dem[ice_mask_clp] = np.nan
+
     # - Plot Clipped Hydraulic Potential
     # - Show Hydraulic Potential
     fig = plt.figure(figsize=(6, 9), dpi=dpi)
@@ -314,40 +328,59 @@ def main() -> None:
                 dpi=dpi, format=fig_format)
     plt.close()
 
-    # - Ice Velocity Maps
-    velocity_path \
-        = os.path.join(project_dir, 'Greenland_Ice_Velocity_MEaSUREs',
-                       f'{args.domain}', 'interp_vmaps_res150',
-                       'vel_2017-07-01_2018-06-31',
-                       'vel_2017-07-01_2018-06-31-rio_EPSG-3413_'
-                       'res-150_average.tiff')
-    velocity_input = load_raster(velocity_path, nbands=2)
-    velocity = velocity_input['data']
-    velocity_x_vect = velocity_input['x_coords']
-    velocity_y_vect = velocity_input['y_coords']
-
-    # - Compute velocity magnitude
-    velocity_mag = np.sqrt((velocity[0, :, :] ** 2) + (velocity[1, :, :] ** 2))
-
     # - Initialize Raster Domain Corners
     x_min = None
     x_max = None
     y_min = None
     y_max = None
     ice_mask_crp = None
+    x_vect_crp = None
+    y_vect_crp = None
     # - Initialize RichDEM Object
     dem_c = None
     # - Initialize Melt Component
-    geothermal_melt = None
-    friction_melt = None
+    out_dir_mnth = None
 
     # - Create Time Series vector and time axis
     time_ax = []
     gl_discharge = []
 
-    # - Crate directory for monthly estimates
-    out_dir_mnth = make_dir(output_dir, 'monthly_est')
+    # - Crate directory that will contain discharge monthly estimates
+    if args.save_monthly:
+        out_dir_mnth = make_dir(output_dir, 'monthly_est')
+
     for year in range(args.f_year, args.l_year+1):
+
+        # - Load Ice Velocity Maps for the considered year
+        if year > 2013:
+            # - Load Interpolate velocity Map
+            # - If selected, apply smoothing filter to
+            # - the interpolated maps.
+            v_map = load_velocity_map_nearest(year, 1, 1,
+                                              args.directory,
+                                              domain=args.domain,
+                                              verbose=True)
+        else:
+            # - Velocity maps for years before 2014 are characterized
+            # - by high noise level and discontinuities. Do not use
+            # - these maps. Use velocity from 2014 based on the
+            # - assumption that ice velocity does not change
+            # - significantly over time.
+            v_map = load_velocity_map_nearest(2014, 6, 1,
+                                              args.directory,
+                                              domain=args.domain,
+                                              verbose=True)
+        # - Velocity x and y components
+        velocity_x = v_map['vx_out']
+        velocity_y = v_map['vy_out']
+        velocity_x_vect = v_map['x']
+        velocity_y_vect = v_map['y']
+        print(np.shape(velocity_x), np.shape(velocity_y))
+        print(np.shape(velocity_x_vect), np.shape(velocity_y_vect))
+
+        # - Compute velocity magnitude
+        velocity_mag = np.sqrt((velocity_x ** 2) + (velocity_y ** 2))
+
         for month in range(1, 13):
             print(f'# - {year} - {month}')
             # - Load Runoff estimates from RACMO 2.3p2
@@ -365,7 +398,7 @@ def main() -> None:
             runoff_x_vect = runoff_input['x_coords']
             runoff_y_vect = runoff_input['y_coords']
 
-            if (year == args.f_year) & (month == 1):
+            if (year == year) & (month == 1):
                 # - Crop the two datasets over the overlapping domain
                 x_min = np.max([runoff_x_vect[0], x_vect[0],
                                 velocity_x_vect[0]])
@@ -375,7 +408,6 @@ def main() -> None:
                                 velocity_y_vect[0]])
                 y_max = np.min([runoff_y_vect[-1], y_vect[-1],
                                 velocity_y_vect[-1]])
-
                 # - Hydraulic Potential
                 ind_hp_x = np.where((x_vect >= x_min) & (x_vect <= x_max))
                 ind_hp_y = np.where((y_vect >= y_min) & (y_vect <= y_max))
@@ -390,9 +422,19 @@ def main() -> None:
                     = os.path.join(output_dir,
                                    f'{args.domain}_hydro_pot'
                                    f'_EPSG-{crs_epsg}_res150_crop.tiff')
-                save_raster(hydro_pot, res, x_vect_crp.copy(), y_vect_crp.copy(),
+                # - NOTE: Hydraulic Potential Map is saved here with the y-axis
+                # -       orientation inverted. This operation is necessary to
+                # -       correctly compute discharge using RichDEM Python API.
+                # -       It is not clear to me why this step is necessary.
+                # -       This raster is overwritten with a correctly oriented
+                # -       one at the end if the script, once the computation of
+                # -       discharge has been completed.
+                save_raster(np.flipud(hydro_pot), res,
+                            x_vect_crp.copy(), y_vect_crp.copy(),
                             out_hp_crp, crs)
-                ice_mask_crp = np.where(np.isnan(np.flipud(hydro_pot)))
+                ice_mask_crp = np.where(np.isnan(hydro_pot))
+
+                # -------------------------------------------
                 # - Initialize RichDEM Object
                 # -------------------------------------------
                 # - Calculate flow accumulation with weights
@@ -401,27 +443,29 @@ def main() -> None:
                 # - Fill depressions with epsilon gradient to ensure drainage
                 rd.FillDepressions(dem_c, epsilon=True, in_place=True)
 
-                # - Ice Velocity Magnitude
-                ind_v_x = np.where(
-                    (velocity_x_vect >= x_min) & (velocity_x_vect <= x_max))
-                ind_v_y = np.where(
-                    (velocity_y_vect >= y_min) & (velocity_y_vect <= y_max))
-                ind_v_xx, ind_v_yy = np.meshgrid(ind_v_x, ind_v_y)
-                velocity_mag = velocity_mag[ind_v_yy, ind_v_xx]
+                if month == 1:
+                    # - Ice Velocity Magnitude
+                    ind_v_x = np.where(
+                        (velocity_x_vect >= x_min) & (velocity_x_vect <= x_max))
+                    ind_v_y = np.where(
+                        (velocity_y_vect >= y_min) & (velocity_y_vect <= y_max))
+                    ind_v_xx, ind_v_yy = np.meshgrid(ind_v_x, ind_v_y)
 
-                # - Compute Melt Production components
-                # - Geothermal Heat Melt Production -
-                # -   > melt = G x area / rho_i / L / 2.
-                geothermal_melt \
-                    = (((geothermal_const * pixel_area) / rho_ice)
-                       / latent_heat_ice) / 2.
-                geothermal_melt \
-                    = np.ones(np.shape(velocity_mag)) * geothermal_melt
+                    velocity_mag = velocity_mag[ind_v_yy, ind_v_xx]
 
-                # - Basal Friction Melt Production
-                friction_melt \
-                    = tau * ((((velocity_mag / n_sec_year) * pixel_area)
-                              / rho_ice) / latent_heat_ice) / 2.
+            # - Compute Melt Production components
+            # - Geothermal Heat Melt Production -
+            # -   > melt = G x area / rho_i / L / 2.
+            geothermal_melt \
+                = (((geothermal_const * pixel_area) / rho_ice)
+                   / latent_heat_ice) / 2.
+            geothermal_melt \
+                = np.ones(np.shape(velocity_mag)) * geothermal_melt
+
+            # - Basal Friction Melt Production
+            friction_melt \
+                = tau * ((((velocity_mag / n_sec_year) * pixel_area)
+                          / rho_ice) / latent_heat_ice) / 2.
 
             # - Runoff
             ind_rf_x = np.where(
@@ -443,26 +487,77 @@ def main() -> None:
                                            weights=weights)
 
             accum_dw[ice_mask_crp] = np.nan
-            # - Save Sub-Glacier Discharges Map
-            out_path \
-                = os.path.join(out_dir_mnth,
-                               f'sub_glacial_discharge_map_{year}-{month:02}_'
-                               f'{args.routing}.tiff')
-            save_raster(np.flipud(accum_dw), res, x_vect.copy(), y_vect.copy(),
-                        out_path, crs, nodata=np.nan)
+            if args.save_monthly:
+                if args.netcdf:
+                    # - Save  monthly discharge Raster in NetCDF4 format
+                    # - Calculate Latitude/Longitude coordinates for
+                    # - each grid point centroid.
+                    # - More Info here:
+                    # -     https://daac.ornl.gov/submit/netcdfrequirements/
+                    x_coords_c = x_vect_crp.copy() + (res[0] / 2.)
+                    y_coords_c = y_vect_crp.copy() + (res[1] / 2.)
+
+                    ds_flow = xr.Dataset(data_vars=dict(
+                        disch=(["y", "x"], accum_dw)),
+                        coords=dict(x=(["x"], x_coords_c),
+                                    y=(["y"], y_coords_c))
+                    )
+                    # - Dataset Attributes
+                    ds_flow.attrs['long_name'] = 'Sub-glacial Discharge'
+                    ds_flow.attrs['standard_name'] = 'discharge'
+                    ds_flow.attrs['unit'] = 'm3/sec'
+                    ds_flow.attrs['routing_algorithm'] = args.routing
+                    # - Add Coordinates Reference System Information
+                    ds_flow.attrs['ellipsoid'] = 'WGS84'
+                    ds_flow.attrs['false_easting'] = 0.0
+                    ds_flow.attrs['false_northing'] = 0.0
+                    ds_flow.attrs['grid_mapping_name'] = "polar_stereographic"
+                    ds_flow.attrs['longitude_of_projection_origin'] = 45.0
+                    ds_flow.attrs['latitude_of_projection_origin'] = 90.0
+                    ds_flow.attrs['standard_parallel'] = 70.0
+                    ds_flow.attrs['straight_vertical_longitude_from_pole'] = 0.0
+                    ds_flow.attrs['EPSG'] = crs_epsg
+                    ds_flow.attrs['spatial_resolution'] = '150m'
+
+                    # - save the cropped velocity field
+                    out_path \
+                        = os.path.join(out_dir_mnth,
+                                       f'sub_glacial_discharge_map_{year}'
+                                       f'-{month:02}_{args.routing}.nc4')
+                    ds_flow.to_netcdf(out_path, format='NETCDF4',
+                                      engine='netcdf4',
+                                      encoding={
+                                          'disch': dict(zlib=True, complevel=9,
+                                                        chunksizes=(100, 100),
+                                                        dtype='float64',
+                                                        )})
+                else:
+                    # - Save  monthly discharge Raster in GeoTiff format
+                    out_path \
+                        = os.path.join(out_dir_mnth,
+                                       f'sub_glacial_discharge_map_{year}'
+                                       f'-{month:02}_{args.routing}.tiff')
+                    save_raster(accum_dw, res,
+                                x_vect_crp.copy(), y_vect_crp.copy(),
+                                out_path, crs, nodata=np.nan)
+
             # - Sample the computed Accumulated floe
-            src = rasterio.open(out_path)
-            sample_pts_in['value'] = [x for x in src.sample(sample_ps_iter)]
-            total_discharge = sample_pts_in['value'].sum()[0]
+            # - Sample the computed Accumulated flow at the points of interest
+            sampled_pts = sample_in_memory_dataset(accum_dw, res,
+                                                   x_vect_crp.copy(),
+                                                   y_vect_crp.copy(),
+                                                   crs, sample_ps_iter,
+                                                   nodata=np.nan)
+            total_discharge = np.sum(sampled_pts)
             print(f'# - Total Discharge at GL [m3/sec]: {total_discharge:.2f}')
 
             time_ax.append(datetime.datetime(year=year, month=month, day=1))
             gl_discharge.append(total_discharge)
 
-    # - save the obtained datasets inside a netcdf archive
+    # - save the obtained discharge time series as a netcdf archive
     file_to_save \
-        = os.path.join(output_dir, f'{args.domain}_sub_glacial_discharge'
-                                   f'_routing-{args.routing}'
+        = os.path.join(output_dir, f'{args.domain}_sub_glacial_discharge_'
+                                   f'[m3*sec-1]_routing-{args.routing}'
                                    f'_{args.f_year}'
                                    f'_{args.l_year}.nc')
     time_ax_out = []
@@ -488,9 +583,17 @@ def main() -> None:
     var_time[:] = time_ax_out
     var_disch_ts[:] = np.array(gl_discharge)
     var_disch_ts.actual_range = [np.min(gl_discharge), np.max(gl_discharge)]
-    var_disch_ts.standard_name = 'Total Discharge at the Grounding Line'
+    var_disch_ts.standard_name = 'Total Sub-glacial Discharge at ' \
+                                 'the Grounding Line'
     # -
     rootgrp.close()
+
+    # - Overwrite previously saved Hydraulic potential Map.
+    out_hp_crp \
+        = os.path.join(output_dir, f'{args.domain}_hydro_pot'
+                                   f'_EPSG-{crs_epsg}_res150_crop.tiff')
+    save_raster(hydro_pot, res, x_vect_crp.copy(), y_vect_crp.copy(),
+                out_hp_crp, crs)
 
 
 if __name__ == '__main__':

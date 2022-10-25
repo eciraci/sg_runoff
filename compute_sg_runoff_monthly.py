@@ -108,7 +108,7 @@ rasterio: access to geospatial raster data in Python.
     https://rasterio.readthedocs.io
 scikit-image: Image processing in Python.
     https://scikit-image.org/
-xarray: labelled multi-dimensional arrays in Python/
+xarray: N-D labeled arrays and datasets in Python.
     https://docs.xarray.dev/en/stable/
 """
 # - Python Dependencies
@@ -119,7 +119,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import geopandas as gpd
 import richdem as rd
-import rasterio
 import fiona
 import xarray as xr
 from skimage.morphology import skeletonize
@@ -128,6 +127,7 @@ from utils.make_dir import make_dir
 from utils.utility_functions_rasterio import \
     load_raster, save_raster, clip_raster, sample_in_memory_dataset
 from utils.mpl_utils import add_colorbar
+from utils.load_velocity_map import load_velocity_map_nearest
 # -
 plt.rc('font', family='monospace')
 plt.rc('font', weight='bold')
@@ -342,19 +342,28 @@ def main() -> None:
     runoff_y_vect = runoff_input['y_coords']
 
     # - Ice Velocity Maps
-    velocity_path \
-        = os.path.join(project_dir, 'Greenland_Ice_Velocity_MEaSUREs',
-                       f'{args.domain}', 'interp_vmaps_res150',
-                       'vel_2017-07-01_2018-06-31',
-                       'vel_2017-07-01_2018-06-31-rio_EPSG-3413_'
-                       'res-150_average.tiff')
-    velocity_input = load_raster(velocity_path, nbands=2)
-    velocity = velocity_input['data']
-    velocity_x_vect = velocity_input['x_coords']
-    velocity_y_vect = velocity_input['y_coords']
+    if args.year > 2013:
+        # - Load Interpolate velocity Map
+        # - If selected, apply smoothing filter to the interpolated maps.
+        v_map = load_velocity_map_nearest(args.year, args.month, 1,
+                                          args.directory,
+                                          domain=args.domain, verbose=True)
+    else:
+        # - Velocity maps for years before 2014 are characterized
+        # - by high noise level and discontinuities. Do not use these maps.
+        # - Use velocity from 2014 based on the assumption that ice velocity
+        # - does not change significantly over time.
+        v_map = load_velocity_map_nearest(2014, 6, 1,
+                                          args.directory,
+                                          domain=args.domain, verbose=True)
+    # - Velocity x and y components
+    velocity_x = v_map['vx_out']
+    velocity_y = v_map['vy_out']
+    velocity_x_vect = v_map['x']
+    velocity_y_vect = v_map['y']
 
     # - Compute velocity magnitude
-    velocity_mag = np.sqrt((velocity[0, :, :]**2) + (velocity[1, :, :]**2))
+    velocity_mag = np.sqrt((velocity_x**2) + (velocity_y**2))
 
     # - Crop the two datasets over the overlapping domain
     x_min = np.max([runoff_x_vect[0], x_vect[0], velocity_x_vect[0]])
