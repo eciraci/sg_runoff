@@ -86,12 +86,12 @@ options:
   --year YEAR, -Y YEAR  Year of interest [def. 2017].
   --month MONTH, -m MONTH
                         Month of interest [def. 7 - July].
+  --netcdf, -N          Save estimated sub-glacial discharge in NetCDF format.
   --show                Show intermediate results.
-
 
 To Run this script digit:
 
-$ python compute_sg_runoff.py ...
+$ python compute_sg_runoff_monthly.py ...
 
 
 PYTHON DEPENDENCIES:
@@ -109,6 +109,8 @@ rasterio: access to geospatial raster data in Python.
     https://rasterio.readthedocs.io
 scikit-image: Image processing in Python.
     https://scikit-image.org/
+xarray: labelled multi-dimensional arrays in Python/
+    https://docs.xarray.dev/en/stable/
 """
 # - Python Dependencies
 from __future__ import print_function
@@ -120,6 +122,7 @@ import geopandas as gpd
 import richdem as rd
 import rasterio
 import fiona
+import xarray as xr
 from skimage.morphology import skeletonize
 # - Library Dependencies
 from utils.make_dir import make_dir
@@ -156,8 +159,12 @@ def main() -> None:
     parser.add_argument('--month', '-M', type=int, default=7,
                         help='Month of interest [def. 7 - July].')
 
+    parser.add_argument('--netcdf', '-N', action='store_true',
+                        help='Save estimated sub-glacial discharge '
+                             'in NetCDF format.')
+
     parser.add_argument('--show', action='store_true',
-                       help='Show intermediate results.')
+                        help='Show intermediate results.')
 
     # - Processing Parameters
     args = parser.parse_args()
@@ -183,6 +190,9 @@ def main() -> None:
     # - Figure Parameters
     fig_format = 'jpeg'
     dpi = 300
+    # - Thresholds used to:
+    bin_thresh = 3      # - generate discharge binary mask
+    sk_thresh = 1       # - generate discharge skeletonized map
 
     # - Project Data Directory
     project_dir = args.directory
@@ -381,8 +391,14 @@ def main() -> None:
     out_hp_crp \
         = os.path.join(output_dir, f'{args.domain}_hydro_pot'
                                    f'_EPSG-{crs_epsg}_res150_crop.tiff')
-    # - Save Hydraulic Potential
-    save_raster(hydro_pot, res, x_vect_crp.copy(), y_vect_crp.copy(),
+    # - NOTE: Hydraulic Potential Map is saved here with the y-axis orientation
+    # -       inverted. This operation is necessary to correctly compute
+    # -       discharge using RichDEM Python API.
+    # -       It is not clear to me why this step is necessary.
+    # -       This raster is overwritten with a correctly oriented one at the
+    # -       end if the script, once the computation of discharge has been
+    # -       completed.
+    save_raster(np.flipud(hydro_pot), res, x_vect_crp.copy(), y_vect_crp.copy(),
                 out_hp_crp, crs)
 
     ice_mask_crp = np.where(np.isnan(hydro_pot))
@@ -453,15 +469,15 @@ def main() -> None:
     # - Calculate flow accumulation with weights
     # -------------------------------------------
     dem_c = rd.LoadGDAL(out_hp_crp, no_data=-9999)
-    dem_c = rd.rdarray(np.flipud(dem_c), no_data=-9999)
+    weights = rd.rdarray(weights, no_data=0)
     # - Fill depressions with epsilon gradient to ensure drainage
     rd.FillDepressions(dem_c, epsilon=True, in_place=True)
     # - Get flow accumulation with no explicit weighting. The default will be 1.
     accum_dw = rd.FlowAccumulation(dem_c, method=args.routing, weights=weights)
 
     if args.show:
-        rd.rdShow(np.flipud(accum_dw), zxmin=450, zxmax=550, zymin=550, zymax=450,
-                  figsize=(6, 9), axes=False, cmap='jet')
+        rd.rdShow(np.flipud(accum_dw), zxmin=450, zxmax=550, zymin=550,
+                  zymax=450, figsize=(6, 9), axes=False, cmap='jet')
         plt.close()
 
     accum_dw[ice_mask_crp] = np.nan
@@ -503,9 +519,15 @@ def main() -> None:
                 dpi=dpi, format=fig_format)
     plt.close()
 
+    # - Overwrite previously saved Hydraulic potential Map.
+    out_hp_crp \
+        = os.path.join(output_dir, f'{args.domain}_hydro_pot'
+                                   f'_EPSG-{crs_epsg}_res150_crop.tiff')
+    save_raster(hydro_pot, res, x_vect_crp.copy(), y_vect_crp.copy(),
+                out_hp_crp, crs)
+
     # - Generate a binary map with values different from zero only
     # - for channels with discharge values above a certain threshold.
-    bin_thresh = 3
     dich_bin = np.full(np.shape(accum_dw), np.nan)
     dich_bin[accum_dw >= bin_thresh] = 1
     # -
@@ -516,7 +538,6 @@ def main() -> None:
                 out_hp_crp, crs)
 
     # - Skeletonize the binary map
-    sk_thresh = 1       # - Threshold for skeletonization
     dich_bin = np.zeros(np.shape(accum_dw))
     dich_bin[accum_dw >= sk_thresh] = 1
     skeleton = skeletonize(dich_bin)
@@ -529,6 +550,46 @@ def main() -> None:
                                    f'{args.routing}.tiff')
     save_raster(skeleton_bin, res, x_vect_crp.copy(), y_vect_crp.copy(),
                 out_hp_crp, crs)
+
+    if args.netcdf:
+        # - Save  monthly discharge Raster in NetCDF4 format
+        # - Calculate Latitude/Longitude coordinates for
+        # - each grid point centroid.
+        # - More Info here: https://daac.ornl.gov/submit/netcdfrequirements/
+        x_coords_c = x_vect_crp.copy() + (res[0]/2.)
+        y_coords_c = y_vect_crp.copy() + (res[1]/2.)
+
+        ds_flow = xr.Dataset(data_vars=dict(
+            disch=(["y", "x"], accum_dw)),
+            coords=dict(x=(["x"], x_coords_c),
+                        y=(["y"], y_coords_c))
+        )
+        # - Dataset Attributes
+        ds_flow.attrs['long_name'] = 'Sub-glacial Discharge'
+        ds_flow.attrs['standard_name'] = 'discharge'
+        ds_flow.attrs['unit'] = 'm3/sec'
+        ds_flow.attrs['routing_algorithm'] = args.routing
+        # - Add Coordinates Reference System Information
+        ds_flow.attrs['ellipsoid'] = 'WGS84'
+        ds_flow.attrs['false_easting'] = 0.0
+        ds_flow.attrs['false_northing'] = 0.0
+        ds_flow.attrs['grid_mapping_name'] = "polar_stereographic"
+        ds_flow.attrs['longitude_of_projection_origin'] = 45.0
+        ds_flow.attrs['latitude_of_projection_origin'] = 90.0
+        ds_flow.attrs['standard_parallel'] = 70.0
+        ds_flow.attrs['straight_vertical_longitude_from_pole'] = 0.0
+        ds_flow.attrs['EPSG'] = crs_epsg
+        ds_flow.attrs['spatial_resolution'] = '150m'
+
+        # - save the cropped velocity field
+        out_path \
+            = os.path.join(output_dir,
+                           f'sub_glacial_discharge_map_{args.routing}.nc4')
+        ds_flow.to_netcdf(out_path, format='NETCDF4', engine='netcdf4',
+                          encoding={'disch': dict(zlib=True, complevel=9,
+                                                  chunksizes=(100, 100),
+                                                  dtype='float64',
+                                                  )})
 
 
 if __name__ == '__main__':
