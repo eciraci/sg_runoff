@@ -138,7 +138,7 @@ from utils.load_velocity_map import load_velocity_map_nearest
 # -
 plt.rc('font', family='monospace')
 plt.rc('font', weight='bold')
-plt.style.use('seaborn-deep')
+plt.style.use('seaborn-v0_8-deep')
 
 
 def main() -> None:
