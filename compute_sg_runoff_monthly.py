@@ -141,7 +141,7 @@ def main() -> None:
         selected domain."""
     )
     # - Optional Arguments
-    project_dir = os.path.join('/', 'Volumes', 'Extreme Pro')
+    project_dir = os.environ['PYTHONDATA']
     parser.add_argument('--directory', '-S', type=str,
                         default=project_dir,  help='Data Directory.')
 
