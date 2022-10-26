@@ -1,6 +1,7 @@
 # Compute Subglacial Runoff 
 
 [![Language][]][1]
+[![License][]][2]
 
 ### Calculate subglacial discharge for the selected ice covered basin.
 
@@ -70,6 +71,7 @@ Compute the runoff generated within each domain pixel that will be routed accord
 - [necdft4: Provides an object-oriented python interface to the netCDF version 4 library.][]
 
 [Language]: https://img.shields.io/badge/python%20-3.7%2B-brightgreen
+[License]: https://img.shields.io/badge/license-MIT-green.svg
 [1]: ..%20image::%20https://www.python.org/
 [Miniconda]: https://docs.conda.io/en/latest/miniconda.html
 [Link]: https://docs.conda.io/projects/conda/en/latest/user-guide/tasks/manage-environments.html#creating-an-environment-with-commands
