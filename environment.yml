@@ -7,12 +7,13 @@ dependencies:
   - pip
   - numpy
   - scipy
-  - matplotlib
+  - matplotlib=3.6
   - gdal
   - rasterio
   - fiona
   - seaborn
   - richdem
+  - netcdf4
   - pyyaml
   - cartopy
   - geopandas
