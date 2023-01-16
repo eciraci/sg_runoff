@@ -78,6 +78,7 @@ Compute the runoff generated within each domain pixel that will be routed accord
 [2]: https://docs.conda.io/projects/conda/en/latest/user-guide/tasks/manage-environments.html#creating-an-environment-from-an-environment-yml-file
 
 [RichDEM:  High-Performance Terrain Analysis]:https://richdem.readthedocs.io/en/latest/python_api.html
+[RichDEM]:https://richdem.readthedocs.io/en/latest/python_api.html
 [xarray: Labelled multi-dimensional arrays in Python.]:https://docs.xarray.dev
 [rasterio: access to geospatial raster data]:https://rasterio.readthedocs.io/en/latest/
 [matplotlib: Library for creating static, animated, and interactive visualizations in Python.]:https://matplotlib.org
