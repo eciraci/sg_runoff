@@ -129,12 +129,14 @@ import netCDF4 as nC4
 import richdem as rd
 import xarray as xr
 import datetime
+from pyproj import CRS, Transformer
 # - Library Dependencies
 from utils.make_dir import make_dir
 from utils.utility_functions_rasterio import \
     load_raster, save_raster, clip_raster, sample_in_memory_dataset
 from utils.mpl_utils import add_colorbar
 from utils.load_velocity_map import load_velocity_map_nearest
+from utils.xyscale_north import xyscale_north
 # -
 plt.rc('font', family='monospace')
 plt.rc('font', weight='bold')
@@ -375,8 +377,6 @@ def main() -> None:
         velocity_y = v_map['vy_out']
         velocity_x_vect = v_map['x']
         velocity_y_vect = v_map['y']
-        print(np.shape(velocity_x), np.shape(velocity_y))
-        print(np.shape(velocity_x_vect), np.shape(velocity_y_vect))
 
         # - Compute velocity magnitude
         velocity_mag = np.sqrt((velocity_x ** 2) + (velocity_y ** 2))
@@ -453,6 +453,19 @@ def main() -> None:
 
                     velocity_mag = velocity_mag[ind_v_yy, ind_v_xx]
 
+            # - Calculates the scaling factor for a polar stereographic
+            # - projection to correct area calculations.
+
+            # - compute raster coordinates mesh-grids
+            m_xx, m_yy = np.meshgrid(x_vect_crp.copy(), y_vect_crp.copy())
+            crs_4326 = CRS.from_epsg(4326)  # - input projection
+            crs_3413 = CRS.from_epsg(3413)  # - input projection
+            transformer = Transformer.from_crs(crs_3413, crs_4326)
+            # - transform raster coordinates to lat-lon
+            m_lat, m_lon = transformer.transform(m_yy, m_xx)
+            # - Pixel Area scaling factor
+            px_area_sc = xyscale_north(m_lat * np.pi / 180.0)
+
             # - Compute Melt Production components
             # - Geothermal Heat Melt Production -
             # -   > melt = G x area / rho_i / L / 2.
@@ -479,12 +492,14 @@ def main() -> None:
             runoff_melt = ((runoff / 1e3) / n_sec_month) * pixel_area
 
             # - Total discharge produced within each pixel - [m3/sec]
-            weights = geothermal_melt + friction_melt + runoff_melt
+            weights \
+                = (geothermal_melt + friction_melt + runoff_melt) * px_area_sc
 
             # - Get flow accumulation using runoff generated per pixel
             # - as weight.
-            accum_dw = rd.FlowAccumulation(dem_c, method=args.routing,
-                                           weights=weights)
+            accum_dw \
+                = rd.FlowAccumulation(dem_c, method=args.routing,
+                                      weights=weights)
 
             accum_dw[ice_mask_crp] = np.nan
             if args.save_monthly:
