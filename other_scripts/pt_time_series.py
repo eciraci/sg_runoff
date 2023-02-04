@@ -57,7 +57,7 @@ def main() -> None:
 
     parser.add_argument('--pt_sample', '-P', type=str,
                         default='subglacial_runoff_sample_main_channel',
-                        help='Shapefile containing the location of the point '
+                        help='Shapefile containg the location of the point '
                              'of interest.')
 
     # - Processing Parameters
