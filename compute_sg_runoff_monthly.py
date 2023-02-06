@@ -122,12 +122,14 @@ import richdem as rd
 import fiona
 import xarray as xr
 from skimage.morphology import skeletonize
+from pyproj import CRS, Transformer
 # - Library Dependencies
 from utils.make_dir import make_dir
 from utils.utility_functions_rasterio import \
     load_raster, save_raster, clip_raster, sample_in_memory_dataset
 from utils.mpl_utils import add_colorbar
 from utils.load_velocity_map import load_velocity_map_nearest
+from utils.xyscale_north import xyscale_north
 # -
 plt.rc('font', family='monospace')
 plt.rc('font', weight='bold')
@@ -184,7 +186,7 @@ def main() -> None:
     n_sec_month = 30 * 24 * 60 * 68
 
     # - Pixel Area [m2]
-    pixel_area = 150 * 150
+    pixel_area = 150 * 150      # - 150 m x 150 m - BedMachin resolution
 
     # - Figure Parameters
     fig_format = 'jpeg'
@@ -427,6 +429,19 @@ def main() -> None:
     save_raster(velocity_mag, res, x_vect_crp.copy(), y_vect_crp.copy(),
                 out_vel_crp, crs)
 
+    # - Calculates the scaling factor for a polar stereographic projection to
+    # - correct area calculations.
+
+    # - compute raster coordinates mesh-grids
+    m_xx, m_yy = np.meshgrid(x_vect_crp.copy(), y_vect_crp.copy())
+    crs_4326 = CRS.from_epsg(4326)  # - input projection
+    crs_3413 = CRS.from_epsg(3413)  # - input projection
+    transformer = Transformer.from_crs(crs_3413, crs_4326)
+    # - transform raster coordinates to lat-lon
+    m_lat, m_lon = transformer.transform(m_yy, m_xx)
+    # - Pixel Area scaling factor
+    px_area_sc = xyscale_north(m_lat * np.pi / 180.0)
+
     # - Compute Melt Production components
     # - Geothermal Heat Melt Production - melt = G x area / rho_i / L / 2.
     geothermal_melt \
@@ -442,7 +457,7 @@ def main() -> None:
     runoff_melt = ((runoff/1e3)/n_sec_month) * pixel_area
 
     # - Total discharge produced within each pixel - [m3/sec]
-    weights = geothermal_melt + friction_melt + runoff_melt
+    weights = (geothermal_melt + friction_melt + runoff_melt) * px_area_sc
 
     # - Weights
     out_weights \
@@ -455,7 +470,7 @@ def main() -> None:
                                    f'_EPSG-{crs_epsg}_res150_clip.tiff')
     clip_raster(out_weights, clip_mask, out_weights_clp, nodata=np.nan)
 
-    # - Origin Flow before accumulation
+    # - Original Flow before accumulation
     fig = plt.figure(figsize=(6, 10), dpi=dpi)
     ax = fig.add_subplot(1, 1, 1)
     im = ax.imshow(np.flipud(weights), extent=extent, zorder=2,
