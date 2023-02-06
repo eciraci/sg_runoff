@@ -204,7 +204,9 @@ def main() -> None:
     # - Domain Mask
     clip_mask = os.path.join(project_dir, 'GIS_Data', 'Petermann_Domain',
                              f'{args.domain}.shp')
-
+    # - Change this value to args.domain to use the same mask for all the
+    # - considered fields. Note: the masks change only in the Petermann GL.
+    d_mask = 'Petermann_Drainage_Basin_EPSG3413'
     # - Shapefile containing the points used to sample the total
     # - discharge at the grounding line.
     try:
@@ -229,16 +231,16 @@ def main() -> None:
     # - Bedrock
     bed_path \
         = os.path.join(bdmch_dir, 'BedMachineGreenland-version_05_bed',
-                       f'{args.domain}_bed_EPSG-3413_res150_bilinear.tiff')
+                       f'{d_mask}_bed_EPSG-3413_res150_bilinear.tiff')
     # - Ice Elevation
     elev_path \
         = os.path.join(bdmch_dir, 'BedMachineGreenland-version_05_surface',
-                       f'{args.domain}_surface_EPSG-3413_res150_bilinear.tiff')
+                       f'{d_mask}_surface_EPSG-3413_res150_bilinear.tiff')
 
     # - Ice Thickness
     thick_path \
         = os.path.join(bdmch_dir, 'BedMachineGreenland-version_05_thickness',
-                       f'{args.domain}_thickness_EPSG-3413_res150'
+                       f'{d_mask}_thickness_EPSG-3413_res150'
                        f'_bilinear.tiff')
 
     # - Compute Hydraulic Potential
@@ -347,7 +349,7 @@ def main() -> None:
         # - If selected, apply smoothing filter to the interpolated maps.
         v_map = load_velocity_map_nearest(args.year, args.month, 1,
                                           args.directory,
-                                          domain=args.domain, verbose=True)
+                                          domain=d_mask, verbose=True)
     else:
         # - Velocity maps for years before 2014 are characterized
         # - by high noise level and discontinuities. Do not use these maps.
@@ -355,7 +357,7 @@ def main() -> None:
         # - does not change significantly over time.
         v_map = load_velocity_map_nearest(2014, 6, 1,
                                           args.directory,
-                                          domain=args.domain, verbose=True)
+                                          domain=d_mask, verbose=True)
     # - Velocity x and y components
     velocity_x = v_map['vx_out']
     velocity_y = v_map['vy_out']
@@ -547,6 +549,8 @@ def main() -> None:
                 out_hp_crp, crs)
 
     # - Skeletonize the binary map
+    # - NOTE: convert the skeletonized flow raster by using
+    # -       GRASS plugin available with QGIS: r.to.vect
     dich_bin = np.zeros(np.shape(accum_dw))
     dich_bin[accum_dw >= sk_thresh] = 1
     skeleton = skeletonize(dich_bin)
