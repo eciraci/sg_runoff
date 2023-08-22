@@ -182,8 +182,8 @@ def main() -> None:
     # - Basal Friction Melt Production
     # - melt = 1e5 x v (in meters per second) x area / rho_i / L / 2.
     tau = 1e5
-    n_sec_year = 365 * 24 * 60 * 68
-    n_sec_month = 30 * 24 * 60 * 68
+    n_sec_year = 365 * 24 * 60 * 60
+    n_sec_month = 30 * 24 * 60 * 60
 
     # - Pixel Area [m2]
     pixel_area = 150 * 150      # - 150 m x 150 m - BedMachin resolution
